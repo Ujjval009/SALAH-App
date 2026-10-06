@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "478161892369",
+    "project_id": "salha-app-e94d8",
+    "storage_bucket": "salha-app-e94d8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:478161892369:android:0ef1f6649f5619180badb0",
+        "android_client_info": {
+          "package_name": "demo.application.salha"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBsgU28OZpKDA4po0GwcLmpL63Gep4oi88"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
