@@ -24,7 +24,9 @@
         }
       ],
       "expo-notifications",
-      "expo-status-bar"
+      "expo-status-bar",
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth"
     ],
     "extra": {
       "eas": {

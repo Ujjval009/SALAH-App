@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Switch, Text, View,
+  ActivityIndicator, Platform, Pressable, ScrollView, StatusBar, StyleSheet, Switch, Text, TouchableOpacity, View,
 } from "react-native";
 import * as Location from "expo-location";
 import { colors } from "./src/theme";
@@ -8,14 +8,24 @@ import {
   AsrKey, Coords, formatCountdown, formatTime, getTimes, METHODS, MethodKey, nextPrayer, Prayer, PRAYERS, PrayerName,
 } from "./src/prayerTimes";
 import {
-  DayStat, DEFAULT_SETTINGS, getDone, getStreak, getWeek, loadCoords, loadSettings, saveCoords, saveSettings,
-  Settings, toggle,
+  DayStat, DEFAULT_SETTINGS, getDone, getStreak, getWeek, loadCoords, loadSettings, migrateLocalData, saveCoords, saveSettings, Settings, toggle,
 } from "./src/storage";
 import { cancelAll, scheduleUpcoming } from "./src/notifications";
+import { AuthProvider, useAuth } from "./src/AuthContext";
+import SignInScreen from "./src/SignInScreen";
+import SignUpScreen from "./src/SignUpScreen";
 
 const MAKKAH: Coords = { lat: 21.4225, lon: 39.8262 };
 
-export default function App() {
+function AuthNavigator() {
+  const [isSignUp, setIsSignUp] = useState(false);
+  return isSignUp
+    ? <SignUpScreen onSwitchToSignIn={() => setIsSignUp(false)} />
+    : <SignInScreen onSwitchToSignUp={() => setIsSignUp(true)} />;
+}
+
+function AppContent() {
+  const { user, signOut, loading: authLoading } = useAuth();
   const [coords, setCoords] = useState<Coords | null>(null);
   const [usingFallback, setUsingFallback] = useState(false);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
@@ -26,11 +36,14 @@ export default function App() {
   const [streak, setStreak] = useState(0);
   const [notifBlocked, setNotifBlocked] = useState(false);
 
-  // Initial load: settings, saved location, then a fresh GPS fix.
+  const uid = user?.uid;
+
   useEffect(() => {
+    if (!uid) return;
     (async () => {
-      setSettings(await loadSettings());
-      const saved = await loadCoords();
+      await migrateLocalData(uid);
+      setSettings(await loadSettings(uid));
+      const saved = await loadCoords(uid);
       if (saved) setCoords(saved);
       try {
         const perm = await Location.requestForegroundPermissionsAsync();
@@ -39,7 +52,7 @@ export default function App() {
           const fresh = { lat: pos.coords.latitude, lon: pos.coords.longitude };
           setCoords(fresh);
           setUsingFallback(false);
-          await saveCoords(fresh);
+          await saveCoords(uid, fresh);
         } else if (!saved) {
           setCoords(MAKKAH);
           setUsingFallback(true);
@@ -52,24 +65,23 @@ export default function App() {
       }
       setReady(true);
     })();
-  }, []);
+  }, [uid]);
 
-  // Clock tick for the countdown.
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(id);
   }, []);
 
   const refreshTracking = useCallback(async () => {
-    setDone(await getDone());
-    setWeek(await getWeek());
-    setStreak(await getStreak());
-  }, []);
+    if (!uid) return;
+    setDone(await getDone(uid));
+    setWeek(await getWeek(uid));
+    setStreak(await getStreak(uid));
+  }, [uid]);
   useEffect(() => { refreshTracking(); }, [refreshTracking]);
 
-  // Keep reminders in sync with location and settings.
   useEffect(() => {
-    if (!coords) return;
+    if (!coords || !uid) return;
     (async () => {
       if (settings.reminders) {
         const ok = await scheduleUpcoming(coords, settings.method, settings.asr);
@@ -79,19 +91,33 @@ export default function App() {
         setNotifBlocked(false);
       }
     })();
-  }, [coords, settings.method, settings.asr, settings.reminders]);
+  }, [coords, settings.method, settings.asr, settings.reminders, uid]);
 
   const update = (patch: Partial<Settings>) => {
     const next = { ...settings, ...patch };
     setSettings(next);
-    saveSettings(next);
+    if (uid) saveSettings(uid, next);
   };
 
   const onToggle = async (name: PrayerName) => {
-    setDone(await toggle(name));
-    setWeek(await getWeek());
-    setStreak(await getStreak());
+    if (!uid) return;
+    setDone(await toggle(uid, name));
+    setWeek(await getWeek(uid));
+    setStreak(await getStreak(uid));
   };
+
+  if (authLoading) {
+    return (
+      <View style={[s.screen, s.center]}>
+        <ActivityIndicator color={colors.accent} />
+        <Text style={[s.muted, { marginTop: 12 }]}>Loading…</Text>
+      </View>
+    );
+  }
+
+  if (!user) {
+    return <AuthNavigator />;
+  }
 
   if (!ready || !coords) {
     return (
@@ -107,6 +133,13 @@ export default function App() {
 
   return (
     <ScrollView style={s.screen} contentContainerStyle={s.content}>
+      <View style={s.headerRow}>
+        <Text style={s.welcome}>Welcome, {user.displayName || user.email?.split("@")[0] || "User"}</Text>
+        <TouchableOpacity onPress={() => signOut()} style={s.signOutBtn}>
+          <Text style={s.signOutText}>Sign Out</Text>
+        </TouchableOpacity>
+      </View>
+
       <Text style={s.muted}>Next prayer</Text>
       <Text style={s.hero}>{next.name}</Text>
       <Text style={s.heroSub}>
@@ -209,6 +242,10 @@ const s = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
   content: { padding: 20, paddingTop: (Platform.OS === "android" ? StatusBar.currentHeight ?? 24 : 56) + 12, paddingBottom: 48 },
   muted: { color: colors.muted, fontSize: 14 },
+  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
+  welcome: { color: colors.text, fontSize: 20, fontWeight: "600" },
+  signOutBtn: { backgroundColor: colors.card, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
+  signOutText: { color: colors.accent, fontSize: 14, fontWeight: "600" },
   hero: { color: colors.text, fontSize: 52, fontWeight: "700", marginTop: 4 },
   heroSub: { color: colors.accent, fontSize: 18, marginTop: 2, marginBottom: 20 },
   notice: { color: colors.accent, backgroundColor: colors.card, padding: 12, borderRadius: 10, marginBottom: 12, fontSize: 14 },
@@ -235,3 +272,11 @@ const s = StyleSheet.create({
   chipOn: { backgroundColor: colors.accent },
   chipText: { color: colors.text, fontSize: 14 },
 });
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+}
