@@ -19,6 +19,15 @@
     "production": {}
   },
   "submit": {
-    "production": {}
+    "production": {},
+    "preview": {
+      "android": {
+        "firebase": {
+          "serviceAccountKeyPath": "./firebase-service-account.json",
+          "projectId": "salha-app-e94d8",
+          "groups": "testers"
+        }
+      }
+    }
   }
 }
